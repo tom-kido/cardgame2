@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2Dカードゲーム - v23 + Phaser（v2.1仕様）</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+  <link rel="stylesheet" href="./cardgame.css">
+</head>
+<body>
+  <div class="game-board">
+    <div class="background-pattern"></div>
+    <div id="phaser-root"></div>
+
+    <div class="player1-area">
+      <div class="deck-stack player1" id="deckStackP1">
+        <div class="deck-card deck-card-2 player1"></div>
+        <div class="deck-card deck-card-1 player1"></div>
+        <div class="deck-card deck-card-top player1 active" id="deckTopP1"><span>山札</span></div>
+      </div>
+      <div class="field-area player1" id="fieldAreaP1"></div>
+      <div class="right-column player1" id="rightColumnP1">
+        <div class="right-slot" data-player="1" data-slot="0"></div>
+        <div class="right-slot" data-player="1" data-slot="1"></div>
+      </div>
+      <div class="hand-area player1" id="handAreaP1">
+        <div class="hand-label">あなたの手札</div>
+        <div class="hand-cards"></div>
+      </div>
+    </div>
+
+    <div class="player2-area">
+      <div class="deck-stack player2" id="deckStackP2">
+        <div class="deck-card deck-card-2 player2"></div>
+        <div class="deck-card deck-card-1 player2"></div>
+        <div class="deck-card deck-card-top player2" id="deckTopP2"><span>CPU<br>山札</span></div>
+      </div>
+      <div class="field-area player2" id="fieldAreaP2"></div>
+      <div class="right-column player2" id="rightColumnP2">
+        <div class="right-slot" data-player="2" data-slot="0"></div>
+        <div class="right-slot" data-player="2" data-slot="1"></div>
+      </div>
+      <div class="hand-area player2" id="handAreaP2">
+        <div class="hand-label">CPUの手札</div>
+        <div class="hand-cards"></div>
+      </div>
+    </div>
+
+    <div class="deck-count player1" id="deckCountP1">P1: 10枚</div>
+    <div class="deck-count player2" id="deckCountP2">CPU: 10枚</div>
+    <div class="info-panel">
+      <div style="font-size:18px;font-weight:bold;margin-bottom:5px;">2D カードゲーム</div>
+      <div style="font-size:14px;color:#cbd5e1;">プレイヤー vs CPU</div>
+    </div>
+    <div class="turn-indicator" id="turnIndicator">あなたのターン</div>
+    <button class="end-turn-btn" id="endTurnBtn">ターン終了</button>
+    <div class="message-log" id="messageLog">ゲーム開始！あなたのターンです。山札をクリックしてカードを引いてください</div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
