@@ -1,4 +1,4 @@
-import { CARD_BACK_URL, CARD_FRONT_URL, SNAP_RANGE_DEFAULT, HAND_OVERLAP_P1, HAND_OVERLAP_P2, CARD_W, CARD_H, ZONE_STACK_OFFSET_X, ZONE_STACK_OFFSET_Y, CARD_TYPE, DEFAULT_CARD, TEX, FONT, ASSETS, ASSET_VERSION } from './constants.js';
+import { CARD_BACK_URL, CARD_FRONT_URL, SNAP_RANGE_DEFAULT, HAND_OVERLAP_P1, HAND_OVERLAP_P2, CARD_W, CARD_H, ZONE_STACK_OFFSET_X, ZONE_STACK_OFFSET_Y, CARD_TYPE, DEFAULT_CARD, TEX, FONT, ASSETS, ASSET_VERSION, SPELL_KIND, SPELL_NAME, rollSpellKind, LABEL_Y } from './constants.js';
 import { buildFieldSlots, computeLayout, waitForLayoutReady, getCenter, uiMessage, hideTurnIndicatorLater, updateDeckDisplays } from './dom.js';
 
 export class CardGameScene extends Phaser.Scene {
@@ -34,17 +34,28 @@ export class CardGameScene extends Phaser.Scene {
   }
   shuffle(a){ const b=[...a]; for(let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]];} return b; }
   frameKeyByType(t){ return t===CARD_TYPE.SHIKI ? TEX.SHIKI : (t===CARD_TYPE.JYUTSU ? TEX.JYUTSU : TEX.POWER); }
-  normalizeCardData(raw){ const c={ ...DEFAULT_CARD, ...raw }; if(!c.type) c.type=CARD_TYPE.SHIKI; if(c.type===CARD_TYPE.POWER) c.power=500; return c; }
+  normalizeCardData(raw){
+    const c={ ...DEFAULT_CARD, ...raw };
+    if(!c.type) c.type=CARD_TYPE.SHIKI;
+    if(c.type===CARD_TYPE.POWER){ c.power=500; }
+    // Fallback for legacy jyutsu cards missing spellKind/name
+    if(c.type===CARD_TYPE.JYUTSU){
+      if(!c.spellKind){ c.spellKind = rollSpellKind(); }
+      if(!c.name){ c.name = SPELL_NAME[c.spellKind] || c.name; }
+    }
+    return c;
+  }
   renderCardFront(container){
     const card = container.getData('card');
     container.removeAll(true);
     const frame = this.add.image(0,0,this.frameKeyByType(card.type)).setOrigin(0.5).setDisplaySize(CARD_W,CARD_H);
-    const nameText  = this.add.text(0,-CARD_H*0.40, (card.type!==CARD_TYPE.POWER ? (card.name||'') : ''), FONT.NAME).setOrigin(0.5);
-    const powerText = this.add.text(0, CARD_H*0.36,
-      (card.type===CARD_TYPE.SHIKI ? String(card.power||'') : card.type===CARD_TYPE.POWER ? '500' : ''),
-      FONT.POWER).setOrigin(0.5);
-    container.add([frame,nameText,powerText]);
+    const nameText  = this.add.text(0, LABEL_Y.NAME_TOP,  '', FONT.NAME ).setOrigin(0.5);
+    const valueText = this.add.text(0, LABEL_Y.VALUE_BOT, '', FONT.POWER).setOrigin(0.5);
+    container.add([frame,nameText,valueText]);
+    container.setData('labelName', nameText);
+    container.setData('labelPower', valueText);
     container.setSize(CARD_W,CARD_H);
+    this.configureLabelsByType(container);
     return container;
   }
   renderCardBack(container){
@@ -70,6 +81,37 @@ export class CardGameScene extends Phaser.Scene {
     this.cardsLayer.add(cont);
     return cont;
   }
+  // タイプ別にテキスト可視状態・文言・Y座標を整える
+  configureLabelsByType(container){
+    const d = container.getData('card') || {};
+    const name = container.getData('labelName');
+    const val  = container.getData('labelPower');
+    if(!name || !val) return;
+    name.setVisible(false).setText('');
+    val.setVisible(false).setText('');
+    switch(d.type){
+      case CARD_TYPE.SHIKI:{
+        val.setY(LABEL_Y.VALUE_BOT);
+        val.setText(d.power != null ? String(d.power) : '');
+        val.setVisible(true);
+        break;
+      }
+      case CARD_TYPE.JYUTSU:{
+        val.setY(LABEL_Y.JYUTSU_BOT);
+        const kindText = d.spellKind && (SPELL_NAME?.[d.spellKind] || '');
+        val.setText(kindText || '');
+        val.setVisible(true);
+        break;
+      }
+      case CARD_TYPE.POWER:{
+        // All labels hidden; image shows value/label
+        break;
+      }
+      default:{
+        break;
+      }
+    }
+  }
   drawCard(player){
     if(player!==this.currentPlayer && player===1){ this.message('あなたのターンではありません'); return; }
     const p=this.players[player]; if(!p||p.deck.length===0){ this.message('山札にカードがありません'); return; }
@@ -85,11 +127,37 @@ export class CardGameScene extends Phaser.Scene {
     const base=[1,2,3,4,5,6,7,8,9,10];
     const cards=base.map((id,i)=>{
       const t = i%3===0 ? CARD_TYPE.SHIKI : (i%3===1 ? CARD_TYPE.JYUTSU : CARD_TYPE.POWER);
+      if(t===CARD_TYPE.JYUTSU){
+        const kind = rollSpellKind();
+        return this.normalizeCardData({ id: `J${id}`, type: CARD_TYPE.JYUTSU, spellKind: kind, name: SPELL_NAME[kind] });
+      }
+      // SHIKI / POWER default naming stays as before
       return this.normalizeCardData({ id, type:t, name:`カード${id}`, power: 500 + (id%3)*100 });
     });
     const arr=[...cards]; for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
     return arr;
   }
+
+  // Placeholder for future jyutsu activation routing
+  activateSetJyutsu({ jyutsuCard, casterShiki, targetShiki }){
+    const kind = jyutsuCard?._data?.spellKind || jyutsuCard?.getData?.('card')?.spellKind;
+    switch(kind){
+      case 'barrier':
+        return this.activateBarrier({ casterShiki });
+      case 'purify':
+        return this.activatePurify({ casterShiki, targetShiki });
+      case 'seal':
+        return this.activateSeal({ casterShiki, targetShiki });
+      case 'dispel':
+        return this.activateDispel({ casterShiki, targetShiki });
+      default:
+        return;
+    }
+  }
+  activateBarrier(){ /* TODO: implement effect */ }
+  activatePurify(){ /* TODO: implement effect */ }
+  activateSeal(){ /* TODO: implement effect */ }
+  activateDispel(){ /* TODO: implement effect */ }
   onDrop(obj){
     const owner=obj.getData('owner'); if(owner!==1){ this.clearHighlights(); return; }
     const source=obj.getData('source'); const pt={x:obj.x,y:obj.y};

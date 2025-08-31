@@ -1,170 +1,136 @@
 
+---
 
-# Codexへ：術式カード＝カード毎に固定化（デッキ構築でランダム割当）
+# Codex 用：カードテキストの配置・表示を調整
 
-**目的**
+## 変更点（要約）
 
-* 術式カードはカード単位で `spellKind` を持つ（`barrier|purify|seal|dispel`）。
-* デッキ生成時にランダムで割り当てる（とりあえず重み付きの適当バランス）。
-* 表示名は `結界/祓い/封印/解呪` を自動表示。
-* 既存ロジック（セット → 発動）は `spellKind` を参照して分岐する。
+* **POWER（力量）**：画像に数字/ラベルが描かれているため、重なるテキストは**完全に非表示**
+* **SHIKI（式神）**：上部の「カード<番号>」テキストは**非表示**、下部に**力量のみ表示**
+* **JYUTSU（術式）**：上部テキストは**非表示**、**下部**に「結界/祓い/封印/解呪」を表示（フレームの「術式」テキストとは重ならない）
 
 ---
 
-## 1) `constants.js` に列挙・名前・重みを追加
+## 1) `src/constants.js` にラベル座標定数を追加
 
-```js
-// すでに似た定義があれば統合。重複は避けてOK。
-export const CARD_TYPE = { SHIKI: 'shikigami', JYUTSU: 'jyutsu', POWER: 'power' };
+```diff
+ // 既存の定数の下あたりに追記
++// === Text layout (カード上の文字位置) ===
++export const LABEL_Y = {
++  NAME_TOP:   (CARD_H * -0.40), // 上帯（使わない方針だが置いておく）
++  VALUE_BOT:  (CARD_H *  0.36), // 下の数値（式神の力量）
++  JYUTSU_BOT: (CARD_H *  0.30), // 下の術式種類（結界/祓い/封印/解呪）
++};
+```
 
-export const SPELL_KIND = {
-  BARRIER: 'barrier',  // 結界構築
-  PURIFY:  'purify',   // 祓い
-  SEAL:    'seal',     // 封印
-  DISPEL:  'dispel',   // 解呪
-};
+※ 既に `FONT` がある場合はそのまま使います（フォントサイズ調整は不要）。
 
-// 表示名（日本語）
-export const SPELL_NAME = {
-  [SPELL_KIND.BARRIER]: '結界',
-  [SPELL_KIND.PURIFY]:  '祓い',
-  [SPELL_KIND.SEAL]:    '封印',
-  [SPELL_KIND.DISPEL]:  '解呪',
-};
+---
 
-// ランダム割当の重み（とりあえず例）
-export const JYUTSU_WEIGHTS = {
-  [SPELL_KIND.BARRIER]: 3,
-  [SPELL_KIND.PURIFY]:  3,
-  [SPELL_KIND.SEAL]:    2,
-  [SPELL_KIND.DISPEL]:  2,
-};
+## 2) `src/scene.js`：タイプ別にテキストを出し分ける
 
-// 重みに基づいて1つ選ぶ
-export function rollSpellKind(rng=Math.random){
-  const entries = Object.entries(JYUTSU_WEIGHTS);
-  const total = entries.reduce((s, [,w])=>s+w, 0);
-  let r = rng()*total;
-  for (const [k,w] of entries){
-    if ((r -= w) <= 0) return k;
+### 2-1. import に `LABEL_Y`（と `SPELL_NAME` を使っていればそれも）を追加
+
+```diff
+- import { CARD_W, CARD_H, TEX, FONT, CARD_TYPE } from './constants.js';
++ import { CARD_W, CARD_H, TEX, FONT, CARD_TYPE, LABEL_Y, SPELL_NAME } from './constants.js';
+```
+
+### 2-2. カード生成：テキストを汎用で作ってからタイプ別調整
+
+```diff
+  createCardSprite(cardData) {
+    const container = this.add.container(0,0);
+
+    const frameImg = this.add.image(0,0, frameKeyByType(cardData.type))
+      .setOrigin(0.5).setDisplaySize(CARD_W, CARD_H);
+
+-   const nameText  = this.add.text(0, -CARD_H*0.40, cardData.name || '', FONT.NAME).setOrigin(0.5);
+-   const powerText = this.add.text(0,  CARD_H*0.36, '', FONT.POWER).setOrigin(0.5);
++   const nameText  = this.add.text(0, LABEL_Y.NAME_TOP, '',  FONT.NAME ).setOrigin(0.5);
++   const powerText = this.add.text(0, LABEL_Y.VALUE_BOT,'',  FONT.POWER).setOrigin(0.5);
+
+    container.add([frameImg, nameText, powerText]);
+
+    container._data = cardData;
+    container._frame = frameImg;
+    container._labelName = nameText;
+    container._labelPower = powerText;
+
++   // タイプ別に可視/内容/位置を整える
++   this.configureLabelsByType(container);
+
+    this.enableDrag(container);
+    return container;
   }
-  return SPELL_KIND.BARRIER;
-}
 ```
 
----
+### 2-3. タイプ別の表示ロジックを追加
 
-## 2) デッキ生成（`scene.js` などのデッキ組み立て処理）を修正
+```diff
++// タイプ別にテキスト可視状態・文言・Y座標を整える
++Scene.prototype.configureLabelsByType = function(container){
++  const d = container?._data || {};
++  const name = container._labelName;
++  const val  = container._labelPower;
++
++  // まず非表示でクリア
++  name.setVisible(false).setText('');
++  val.setVisible(false).setText('');
++
++  switch (d.type) {
++    case 'shikigami': {
++      // 上部の「カード<番号>」は出さない
++      // 下部に力量のみ（500/1000/1500）
++      val.setY(LABEL_Y.VALUE_BOT);
++      val.setText(d.power != null ? String(d.power) : '');
++      val.setVisible(true);
++      break;
++    }
++    case 'jyutsu': {
++      // 上部は出さない（フレーム画像に「術式」表記がある）
++      // 下部に術式の種類（結界/祓い/封印/解呪）
++      val.setY(LABEL_Y.JYUTSU_BOT);
++      const kindText = d.spellKind && (SPELL_NAME?.[d.spellKind] || '');
++      val.setText(kindText || '');
++      val.setVisible(true);
++      break;
++    }
++    case 'power': {
++      // 画像自体に「500／力量」が描かれているため重ねるテキストは全て非表示
++      break;
++    }
++    default: {
++      // 何もしない（保険）
++      break;
++    }
++  }
++};
+```
 
-* 術式カードを作るときに **必ず `spellKind` を持たせる**。
-* カードの `name` は `SPELL_NAME[spellKind]` を入れておくと表示が楽。
+### 2-4. 既存の「カード表面更新」処理がある場合は最後に呼ぶ
 
-```js
-// 例：術式カードのファクトリ
-function makeJyutsuCard(id){
-  const kind = rollSpellKind();
-  return {
-    id,
-    type: CARD_TYPE.JYUTSU,
-    spellKind: kind,
-    name: SPELL_NAME[kind], // 表示名
-  };
-}
-
-// 例：デッキ構築（枚数や配分は既存のまま）
-function buildDeck(){
-  const deck = [];
-  // …式神・力量の追加は既存ロジックで…
-  // 術式カード N枚 分だけ作る
-  for (let i=0; i<N_JYUTSU; i++){
-    deck.push(makeJyutsuCard(`J${i}`));
+```diff
+- updateCardFace(container, patch) {
++ updateCardFace(container, patch) {
+    if (!container?._data) return;
+    Object.assign(container._data, patch);
+    if (patch.type) {
+      const key = frameKeyByType(container._data.type);
+      container._frame.setTexture(key);
+    }
+-   // 旧：個別に setText していたら削除
+-   // container._labelName.setText(...); container._labelPower.setText(...);
++   // タイプ別ルールで可視・配置・文言を再適用
++   this.configureLabelsByType(container);
   }
-  // シャッフル等は既存のまま
-  return deck;
-}
-```
-
-> もし既存の術式カードに `spellKind` を持たないものが紛れても、**配布時に補完**して落ちないようにしておくと安心です：
-
-```js
-function ensureJyutsuKind(card){
-  if (card.type !== CARD_TYPE.JYUTSU) return card;
-  if (!card.spellKind){
-    card.spellKind = rollSpellKind();
-    card.name = SPELL_NAME[card.spellKind];
-  }
-  return card;
-}
 ```
 
 ---
 
-## 3) 描画（名前帯）を `spellKind` に対応
+## 3) 受け入れ条件（これでOK）
 
-* すでに「フレーム＋テキスト重ね描画」に改修済みなら、**術式カードの `name` をそのまま上帯に表示**するだけでOK。
-* 念のため、生成時と更新時に `type==='jyutsu'` の場合は `name = SPELL_NAME[spellKind]` を強制同期。
-
-```js
-function syncJyutsuName(container){
-  const d = container?._data;
-  if (!d || d.type !== CARD_TYPE.JYUTSU) return;
-  container._labelName.setText(SPELL_NAME[d.spellKind] || '術式');
-}
-```
-
----
-
-## 4) セット／発動のロジックを `spellKind` で分岐
-
-* すでに用意してある `setSpellToShiki()` / `activateBarrier()` / `activatePurify()` / `activateSeal()` / `activateDispel()` を活かし、**術式カード1枚＝固定の `spellKind`** を参照して発動させます。
-
-```js
-// 術式カードを式神にセット（置くだけ。発動は別）
-function setSpellToShiki({ casterPid, targetShiki, jyutsuCard }){
-  // 既存のアタッチ処理に加えて…
-  targetShiki.attachments ??= { barrier:false, sealed:false, spells:[] };
-  targetShiki.attachments.spells.push({
-    card: jyutsuCard,
-    kind: jyutsuCard._data.spellKind,
-    owner: casterPid,
-  });
-  // 見た目（小バッジ等）は任意
-  syncJyutsuName(jyutsuCard);
-}
-
-// セット済み術式を発動（カードに記録されたkindで分岐）
-function activateSetJyutsu({ casterShiki, targetShiki, jyutsuCard }){
-  const kind = jyutsuCard?._data?.spellKind;
-  switch (kind){
-    case SPELL_KIND.BARRIER: return this.activateBarrier({ casterShiki });
-    case SPELL_KIND.PURIFY:  return this.activatePurify({ casterShiki, targetShiki });
-    case SPELL_KIND.SEAL:    return this.activateSeal({ casterShiki, targetShiki });
-    case SPELL_KIND.DISPEL:  return this.activateDispel({ casterShiki, targetShiki });
-    default: return this.uiMessage('不明な術式');
-  }
-}
-```
-
-> ※発動後に「術式カードを残す／消費する」はお好みで。
-> ひとまず **バリアは残存**、それ以外は残してもOK（将来、消費に変えるのも簡単）。
-> 消費にする場合は `activateSetJyutsu` のラストで **虚数空間へ送る**処理を入れてください。
-
----
-
-## 5) 操作系（最小ステップ）
-
-* 現状のUIに合わせ、**発動トリガ**は既存のやり方に紐付けてください（例：選択中の式神＋対象クリックで発動、右クリックメニュー、など）。
-* 重要なのは「**どの術式を発動したかはカードが決める**」という点。UIでは術式名を出すだけでOK。
-
----
-
-## 6) 動作確認（受け入れ基準）
-
-1. デッキを生成すると、術式カードに `spellKind` がランダムで付く。
-2. 術式カードの**上帯**には `結界/祓い/封印/解呪` のいずれかが表示される。
-3. 術式カードを式神に**セット**→その式神から**発動**すると、`spellKind` に応じた処理が呼ばれる。
-4. 祓いは1式神1ターン1回制限・結界必須、封印は相手を行動不能、解呪は相手の術式1枚除外、結界はバフ＆召喚制限、等、既存ロジックと矛盾しない。
-5. 画像はこれまで通り：`siki_image.png`/`jyutu_image.png`/`pow_image.png`、裏は`back_image.png`。
-
----
+* 力量カード：画像の「500／力量」だけが見え、テキストの重なりは**消えている**
+* 式神カード：上部の「カード<番号>」は**表示されない**／下部に**力量**のみ表示
+* 術式カード：上部にテキストは**出ず**、下部に**結界/祓い/封印/解呪**が表示され、フレームの「術式」と**重ならない**
 

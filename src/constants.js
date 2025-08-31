@@ -41,3 +41,38 @@ export const FONT = {
   NAME:  { fontSize: '16px', fontFamily: 'serif', color: '#111' },
   POWER: { fontSize: '18px', fontFamily: 'serif', color: '#111', align: 'center' },
 };
+
+// === Text layout (カード上の文字位置) ===
+export const LABEL_Y = {
+  NAME_TOP:   (CARD_H * -0.40), // 上帯（基本は非表示）
+  VALUE_BOT:  (CARD_H *  0.36), // 下の数値（式神の力量）
+  JYUTSU_BOT: (CARD_H *  0.30), // 下の術式種類（結界/祓い/封印/解呪）
+};
+
+// ==== Jyutsu (術式) system ====
+export const SPELL_KIND = {
+  BARRIER: 'barrier',
+  PURIFY: 'purify',
+  SEAL: 'seal',
+  DISPEL: 'dispel',
+};
+
+export const SPELL_NAME = {
+  [SPELL_KIND.BARRIER]: '結界',
+  [SPELL_KIND.PURIFY]:  '祓い',
+  [SPELL_KIND.SEAL]:    '封印',
+  [SPELL_KIND.DISPEL]:  '解呪',
+};
+
+// Weighted random for spell kind (tweak as needed)
+export function rollSpellKind() {
+  // Example weights: barrier:3, purify:3, seal:2, dispel:2
+  const pool = [
+    SPELL_KIND.BARRIER, SPELL_KIND.BARRIER, SPELL_KIND.BARRIER,
+    SPELL_KIND.PURIFY,  SPELL_KIND.PURIFY,  SPELL_KIND.PURIFY,
+    SPELL_KIND.SEAL,    SPELL_KIND.SEAL,
+    SPELL_KIND.DISPEL,  SPELL_KIND.DISPEL,
+  ];
+  const idx = Math.floor(Math.random() * pool.length);
+  return pool[idx];
+}
