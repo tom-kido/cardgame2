@@ -26,6 +26,7 @@ export const CARD_TYPE = {
 export const DEFAULT_CARD = {
   type: CARD_TYPE.SHIKI,
   name: '',
+  // Shikigami required power: 500/1000/1500 only
   power: 500,
 };
 
@@ -75,4 +76,19 @@ export function rollSpellKind() {
   ];
   const idx = Math.floor(Math.random() * pool.length);
   return pool[idx];
+}
+
+// Helper: normalize required power to allowed tiers
+export function normalizeRequiredPower(v){
+  const tiers = [500,1000,1500];
+  if(!Number.isFinite(v)) return 500;
+  // snap to nearest tier below or equal
+  for(let i=tiers.length-1;i>=0;i--){ if(v>=tiers[i]) return tiers[i]; }
+  return 500;
+}
+
+export function requiredToCostCount(required){
+  // 500 -> 1, 1000 -> 2, 1500 -> 3
+  const tiers = {500:1,1000:2,1500:3};
+  return tiers[required] ?? Math.max(1, Math.round(required/500));
 }
