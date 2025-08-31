@@ -27,12 +27,20 @@ export function computeLayout() {
       hand: getCenter(document.getElementById('handAreaP1')),
       fieldSlots: centers('#fieldAreaP1 .field-slot'),
       rightSlots: centers('#rightColumnP1 .right-slot'),
+      zones: {
+        void: getCenter(document.getElementById('zoneVoidP1')),
+        exile: getCenter(document.getElementById('zoneExileP1')),
+      },
       deckTop: getCenter(document.getElementById('deckTopP1')),
     },
     p2: {
       hand: getCenter(document.getElementById('handAreaP2')),
       fieldSlots: centers('#fieldAreaP2 .field-slot'),
       rightSlots: centers('#rightColumnP2 .right-slot'),
+      zones: {
+        void: getCenter(document.getElementById('zoneVoidP2')),
+        exile: getCenter(document.getElementById('zoneExileP2')),
+      },
       deckTop: getCenter(deckTopP2El),
     }
   };

@@ -1,15 +1,24 @@
-import { CARD_BACK_URL, CARD_FRONT_URL, SNAP_RANGE_DEFAULT, HAND_OVERLAP_P1, HAND_OVERLAP_P2, CARD_W, CARD_H } from './constants.js';
+import { CARD_BACK_URL, CARD_FRONT_URL, SNAP_RANGE_DEFAULT, HAND_OVERLAP_P1, HAND_OVERLAP_P2, CARD_W, CARD_H, ZONE_STACK_OFFSET_X, ZONE_STACK_OFFSET_Y, CARD_TYPE, DEFAULT_CARD, TEX, FONT, ASSETS, ASSET_VERSION } from './constants.js';
 import { buildFieldSlots, computeLayout, waitForLayoutReady, getCenter, uiMessage, hideTurnIndicatorLater, updateDeckDisplays } from './dom.js';
 
 export class CardGameScene extends Phaser.Scene {
   constructor(){ super('CardGame'); }
-  preload(){ this.load.image('cardBack',CARD_BACK_URL); this.load.image('cardFront',CARD_FRONT_URL); }
+  preload(){
+    // Prefer local type-specific assets with cache-busting query
+    this.load.image(TEX.BACK,  `${ASSETS.BACK}?${ASSET_VERSION}`);
+    this.load.image(TEX.SHIKI, `${ASSETS.SHIKI}?${ASSET_VERSION}`);
+    this.load.image(TEX.JYUTSU,`${ASSETS.JYUTSU}?${ASSET_VERSION}`);
+    this.load.image(TEX.POWER, `${ASSETS.POWER}?${ASSET_VERSION}`);
+    // Back-compat keys in case some code still references old names
+    this.load.image('cardBack', `${ASSETS.BACK}?${ASSET_VERSION}`);
+    this.load.image('cardFront', `${ASSETS.SHIKI}?${ASSET_VERSION}`);
+  }
   async create(){
     buildFieldSlots(); await waitForLayoutReady(); this.layout=computeLayout();
     this.snapRange=SNAP_RANGE_DEFAULT; this.currentPlayer=1;
     this.players={
-      1:{ deck:this.shuffle([1,2,3,4,5,6,7,8,9,10]), hand:[], field:Array(10).fill(null), right:[[],[]] },
-      2:{ deck:this.shuffle([1,2,3,4,5,6,7,8,9,10]), hand:[], field:Array(10).fill(null), right:[[],[]] }
+      1:{ deck:this.buildDeck(), hand:[], field:Array(10).fill(null), right:[[],[]], zones:{ void:[], exile:[] } },
+      2:{ deck:this.buildDeck(), hand:[], field:Array(10).fill(null), right:[[],[]], zones:{ void:[], exile:[] } }
     };
     this.cardsLayer=this.add.layer();
     const deckTopP1=document.getElementById('deckTopP1'); deckTopP1 && deckTopP1.addEventListener('click',()=>this.drawCard(1));
@@ -24,33 +33,68 @@ export class CardGameScene extends Phaser.Scene {
     document.addEventListener('keydown',(e)=>{ if(this.currentPlayer!==1) return; if(e.code==='Space'){ e.preventDefault(); this.drawCard(1);} if(e.code==='Enter'){ e.preventDefault(); this.endTurn(); } });
   }
   shuffle(a){ const b=[...a]; for(let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]];} return b; }
-  createCard(number,owner){
+  frameKeyByType(t){ return t===CARD_TYPE.SHIKI ? TEX.SHIKI : (t===CARD_TYPE.JYUTSU ? TEX.JYUTSU : TEX.POWER); }
+  normalizeCardData(raw){ const c={ ...DEFAULT_CARD, ...raw }; if(!c.type) c.type=CARD_TYPE.SHIKI; if(c.type===CARD_TYPE.POWER) c.power=500; return c; }
+  renderCardFront(container){
+    const card = container.getData('card');
+    container.removeAll(true);
+    const frame = this.add.image(0,0,this.frameKeyByType(card.type)).setOrigin(0.5).setDisplaySize(CARD_W,CARD_H);
+    const nameText  = this.add.text(0,-CARD_H*0.40, (card.type!==CARD_TYPE.POWER ? (card.name||'') : ''), FONT.NAME).setOrigin(0.5);
+    const powerText = this.add.text(0, CARD_H*0.36,
+      (card.type===CARD_TYPE.SHIKI ? String(card.power||'') : card.type===CARD_TYPE.POWER ? '500' : ''),
+      FONT.POWER).setOrigin(0.5);
+    container.add([frame,nameText,powerText]);
+    container.setSize(CARD_W,CARD_H);
+    return container;
+  }
+  renderCardBack(container){
+    container.removeAll(true);
+    const back=this.add.image(0,0,TEX.BACK).setOrigin(0.5).setDisplaySize(CARD_W,CARD_H);
+    container.add([back]);
+    container.setSize(CARD_W,CARD_H);
+    return container;
+  }
+  createCard(cardRaw,owner){
+    const card = this.normalizeCardData(cardRaw);
     const deckPos = owner===1 ? (this.layout?.p1.deckTop||{x:0,y:0}) : (this.layout?.p2.deckTop||{x:0,y:0});
-    const cont=this.add.container(deckPos.x,deckPos.y); cont.setSize(CARD_W,CARD_H);
-    if(owner===1){
-      const img=this.add.image(0,0,'cardFront').setDisplaySize(CARD_W,CARD_H);
-      const txt=this.add.text(0,0,String(number),{fontFamily:'Segoe UI, sans-serif',fontSize:'28px',color:'#ffffff',fontStyle:'bold'}).setOrigin(0.5);
-      cont.add([img,txt]); cont.setInteractive(new Phaser.Geom.Rectangle(0,0,CARD_W,CARD_H),Phaser.Geom.Rectangle.Contains); this.input.setDraggable(cont);
-    }else{
-      const img=this.add.image(0,0,'cardBack').setDisplaySize(CARD_W,CARD_H); cont.add([img]);
-    }
-    cont.setData({ number, owner, source:'hand', index:null, locked:false }); this.cardsLayer.add(cont); return cont;
+    const cont=this.add.container(deckPos.x,deckPos.y);
+    cont.setData('card', card);
+    cont.setData('number', card.id ?? card.number ?? 0);
+    cont.setData('owner', owner);
+    cont.setData('source','hand');
+    cont.setData('index', null);
+    cont.setData('locked', false);
+    if(owner===1) this.renderCardFront(cont); else this.renderCardBack(cont);
+    cont.setInteractive(new Phaser.Geom.Rectangle(0,0,CARD_W,CARD_H),Phaser.Geom.Rectangle.Contains);
+    this.input.setDraggable(cont);
+    this.cardsLayer.add(cont);
+    return cont;
   }
   drawCard(player){
     if(player!==this.currentPlayer && player===1){ this.message('あなたのターンではありません'); return; }
     const p=this.players[player]; if(!p||p.deck.length===0){ this.message('山札にカードがありません'); return; }
-    const num=p.deck.shift(); const card=this.createCard(num,player); p.hand.push(card);
+    const cardData=p.deck.shift(); const card=this.createCard(cardData,player); p.hand.push(card);
     const center=(player===1?this.layout?.p1.hand:this.layout?.p2.hand)||{x:200,y:500};
     const idx=p.hand.length-1; const overlap=(player===1?HAND_OVERLAP_P1:HAND_OVERLAP_P2);
     const tx=center.x+(idx-(p.hand.length-1)/2)*overlap; const ty=center.y;
     this.tweens.add({targets:card,x:tx,y:ty,duration:400,ease:'Power2'});
     updateDeckDisplays(this.players);
-    if(player===1){ this.message(`カード ${num} を手札に加えました`);} else { this.message('CPUがカードを引きました'); }
+    if(player===1){ this.message(`カード ${card.getData('number')} を手札に加えました`);} else { this.message('CPUがカードを引きました'); }
+  }
+  buildDeck(){
+    const base=[1,2,3,4,5,6,7,8,9,10];
+    const cards=base.map((id,i)=>{
+      const t = i%3===0 ? CARD_TYPE.SHIKI : (i%3===1 ? CARD_TYPE.JYUTSU : CARD_TYPE.POWER);
+      return this.normalizeCardData({ id, type:t, name:`カード${id}`, power: 500 + (id%3)*100 });
+    });
+    const arr=[...cards]; for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+    return arr;
   }
   onDrop(obj){
     const owner=obj.getData('owner'); if(owner!==1){ this.clearHighlights(); return; }
     const source=obj.getData('source'); const pt={x:obj.x,y:obj.y};
     if(source==='field'){
+      const movedZone=this.trySnapZone(obj,pt); if(movedZone){ this.clearHighlights(); return; }
       const moveRight=this.trySnapRight(obj,pt); if(moveRight){ this.clearHighlights(); return; }
       const movedField=this.trySnapFieldFromField(obj,pt); if(movedField){ this.clearHighlights(); return; }
       this.returnToField(obj); this.clearHighlights(); return;
@@ -98,9 +142,35 @@ export class CardGameScene extends Phaser.Scene {
     rslots.forEach((slot,idx)=>{ const c=getCenter(slot); const d=Phaser.Math.Distance.Between(pt.x,pt.y,c.x,c.y); if(d<=this.snapRange && d<best.dist) best={idx,dist:d,c}; });
     if(best.idx!==-1){
       const old=obj.getData('index'); this.players[1].field[old]=null; document.querySelectorAll('#fieldAreaP1 .field-slot')[old]?.classList.remove('occupied');
-      const stack=this.players[1].right[best.idx]; stack.push(obj); obj.setName(''); obj.setData('source','right'); obj.setData('locked',true);
-      const offset=stack.length-1; this.tweens.add({targets:obj,x:best.c.x+offset*5,y:best.c.y+offset*20,duration:220,ease:'Power2'});
-      this.message(`カード ${obj.getData('number')} を右列へ移動（ロック）`); return true;
+      const slotEl = rslots[best.idx];
+      const zoneType = slotEl?.dataset?.zone || (slotEl?.id?.includes('Void') ? 'void' : slotEl?.id?.includes('Exile') ? 'exile' : null);
+      if(zoneType){
+        const z=this.players[1].zones[zoneType]; z.push(obj); obj.setName(''); obj.setData('source','zone'); obj.setData('locked',true);
+        const offset=z.length-1; this.tweens.add({targets:obj,x:best.c.x+offset*ZONE_STACK_OFFSET_X,y:best.c.y+offset*ZONE_STACK_OFFSET_Y,duration:220,ease:'Power2'});
+        this.message(`カード ${obj.getData('number')} を${zoneType==='void'?'虚数空間':'結界外'}ゾーンへ移動（ロック）`); return true;
+      } else {
+        const stack=this.players[1].right[best.idx]; stack.push(obj); obj.setName(''); obj.setData('source','right'); obj.setData('locked',true);
+        const offset=stack.length-1; this.tweens.add({targets:obj,x:best.c.x+offset*5,y:best.c.y+offset*20,duration:220,ease:'Power2'});
+        this.message(`カード ${obj.getData('number')} を右列へ移動（ロック）`); return true;
+      }
+    }
+    return false;
+  }
+  trySnapZone(obj,pt){
+    const L=this.layout?.p1?.zones; if(!L) return false;
+    const dVoid=Phaser.Math.Distance.Between(pt.x,pt.y,L.void.x,L.void.y);
+    const dExile=Phaser.Math.Distance.Between(pt.x,pt.y,L.exile.x,L.exile.y);
+    if(dVoid<=this.snapRange){
+      const old=obj.getData('index'); if(old!=null){ this.players[1].field[old]=null; document.querySelectorAll('#fieldAreaP1 .field-slot')[old]?.classList.remove('occupied'); }
+      const z=this.players[1].zones.void; z.push(obj); obj.setName(''); obj.setData('source','zone'); obj.setData('locked',true);
+      const offset=z.length-1; this.tweens.add({targets:obj,x:L.void.x+offset*ZONE_STACK_OFFSET_X,y:L.void.y+offset*ZONE_STACK_OFFSET_Y,duration:220,ease:'Power2'});
+      this.message(`カード ${obj.getData('number')} を虚数空間ゾーンへ移動（ロック）`); return true;
+    }
+    if(dExile<=this.snapRange){
+      const old=obj.getData('index'); if(old!=null){ this.players[1].field[old]=null; document.querySelectorAll('#fieldAreaP1 .field-slot')[old]?.classList.remove('occupied'); }
+      const z=this.players[1].zones.exile; z.push(obj); obj.setName(''); obj.setData('source','zone'); obj.setData('locked',true);
+      const offset=z.length-1; this.tweens.add({targets:obj,x:L.exile.x+offset*ZONE_STACK_OFFSET_X,y:L.exile.y+offset*ZONE_STACK_OFFSET_Y,duration:220,ease:'Power2'});
+      this.message(`カード ${obj.getData('number')} を結界外ゾーンへ移動（ロック）`); return true;
     }
     return false;
   }
@@ -125,6 +195,8 @@ export class CardGameScene extends Phaser.Scene {
       document.querySelectorAll('#rightColumnP1 .right-slot').forEach(slot=>{
         const c=getCenter(slot); const d=Phaser.Math.Distance.Between(pt.x,pt.y,c.x,c.y); if(d<=this.snapRange) slot.classList.add('highlight');
       });
+      // zone elements highlight
+      ['zoneVoidP1','zoneExileP1'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; const c=getCenter(el); const d=Phaser.Math.Distance.Between(pt.x,pt.y,c.x,c.y); if(d<=this.snapRange) el.classList.add('highlight'); });
       document.querySelectorAll('#fieldAreaP1 .field-slot').forEach((slot,idx)=>{
         const c=getCenter(slot); const d=Phaser.Math.Distance.Between(pt.x,pt.y,c.x,c.y);
         const occupied=!!this.cardsLayer.getChildren().find(o=>o.name===`p1_field_${idx}`);
@@ -132,7 +204,7 @@ export class CardGameScene extends Phaser.Scene {
       });
     }
   }
-  clearHighlights(){ document.querySelectorAll('.field-slot.highlight,.right-slot.highlight').forEach(el=>el.classList.remove('highlight')); }
+  clearHighlights(){ document.querySelectorAll('.field-slot.highlight,.right-slot.highlight,.zone.highlight').forEach(el=>el.classList.remove('highlight')); }
   layoutHands(){
     const center=this.layout?.p1.hand; if(!center) return;
     const arr=this.players[1].hand; const overlap=HAND_OVERLAP_P1;
@@ -147,6 +219,15 @@ export class CardGameScene extends Phaser.Scene {
     this.players[2].field.forEach((num,idx)=>{ const c=this.cardsLayer.getChildren().find(o=>o.name===`p2_field_${idx}`); if(c&&p2Slots[idx]) this.tweens.add({targets:c,x:p2Slots[idx].x,y:p2Slots[idx].y,duration:180,ease:'Power2'}); });
     this.players[1].right.forEach((stack,sIdx)=>{ const base=this.layout?.p1.rightSlots[sIdx]; stack.forEach((card,i)=>{ this.tweens.add({targets:card,x:base.x+i*5,y:base.y+i*20,duration:180,ease:'Power2'}); }); });
     this.players[2].right.forEach((stack,sIdx)=>{ const base=this.layout?.p2.rightSlots[sIdx]; stack.forEach((card,i)=>{ this.tweens.add({targets:card,x:base.x+i*5,y:base.y+i*20,duration:180,ease:'Power2'}); }); });
+    // zones re-layout
+    const Z1=this.layout?.p1?.zones; if(Z1){
+      this.players[1].zones.void.forEach((card,i)=>{ this.tweens.add({targets:card,x:Z1.void.x+i*ZONE_STACK_OFFSET_X,y:Z1.void.y+i*ZONE_STACK_OFFSET_Y,duration:180,ease:'Power2'}); });
+      this.players[1].zones.exile.forEach((card,i)=>{ this.tweens.add({targets:card,x:Z1.exile.x+i*ZONE_STACK_OFFSET_X,y:Z1.exile.y+i*ZONE_STACK_OFFSET_Y,duration:180,ease:'Power2'}); });
+    }
+    const Z2=this.layout?.p2?.zones; if(Z2){
+      this.players[2].zones.void.forEach((card,i)=>{ this.tweens.add({targets:card,x:Z2.void.x+i*ZONE_STACK_OFFSET_X,y:Z2.void.y+i*ZONE_STACK_OFFSET_Y,duration:180,ease:'Power2'}); });
+      this.players[2].zones.exile.forEach((card,i)=>{ this.tweens.add({targets:card,x:Z2.exile.x+i*ZONE_STACK_OFFSET_X,y:Z2.exile.y+i*ZONE_STACK_OFFSET_Y,duration:180,ease:'Power2'}); });
+    }
   }
   endTurn(){
     this.currentPlayer=this.currentPlayer===1?2:1;
@@ -169,9 +250,8 @@ export class CardGameScene extends Phaser.Scene {
     const idxSlot=empty[Math.floor(Math.random()*empty.length)];
     const card=cpu.hand.splice(idxCard,1)[0];
     cpu.field[idxSlot]=card.getData('number'); card.setName(`p2_field_${idxSlot}`); card.setData('owner',2); card.setData('source','field'); card.setData('index',idxSlot);
-    card.removeAll(true); const img=this.add.image(0,0,'cardFront').setDisplaySize(CARD_W,CARD_H);
-    const txt=this.add.text(0,0,String(card.getData('number')),{fontFamily:'Segoe UI, sans-serif',fontSize:'28px',color:'#ffffff',fontStyle:'bold'}).setOrigin(0.5);
-    card.add([img,txt]);
+    // Reveal CPU card when placed on field
+    this.renderCardFront(card);
     const c=this.layout?.p2.fieldSlots[idxSlot]; if(c) this.tweens.add({targets:card,x:c.x,y:c.y,duration:220,ease:'Power2'});
     document.querySelector(`#fieldAreaP2 .field-slot[data-slot="${idxSlot}"]`)?.classList.add('occupied');
     this.message(`CPUがカード ${card.getData('number')} を場に配置しました`);

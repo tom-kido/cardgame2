@@ -178,6 +178,18 @@ body {
   box-shadow: 0 0 20px rgba(245,158,11,.4);
 }
 
+/* ========= ゾーン（右2枠の意味付け） ========= */
+.zone { position: relative; border: 2px dashed rgba(255,255,255,.4); transition: .2s; }
+.zone.highlight { box-shadow: 0 0 18px rgba(255,255,255,.35); }
+.zone-void {
+  background: linear-gradient(145deg, rgba(76,29,149,.25), rgba(30,64,175,.25));
+  border-color: rgba(147,51,234,.55);
+}
+.zone-exile {
+  background: linear-gradient(145deg, rgba(59,130,246,.20), rgba(14,165,233,.20));
+  border-color: rgba(56,189,248,.55);
+}
+
 /* ========= UI ========= */
 .info-panel {
   position: absolute;
