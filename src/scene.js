@@ -481,6 +481,7 @@ export class CardGameScene extends Phaser.Scene {
       arr.splice(i,1);
       c.setData('source','attached'); c.setData('locked',true); c.setData('attachedTo', jyutsuCont.getData('number'));
       attached.push(c);
+      n--; // attach exactly the required number of power cards
     }
     const prev = jyutsuCont.getData('attachedPowers')||[];
     jyutsuCont.setData('attachedPowers', prev.concat(attached));
